@@ -829,6 +829,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self.* = undefined;
         }
 
+        /// Update API-specific presentation state for a resized surface.
+        pub fn setSurfaceSize(self: *Self, width: u32, height: u32) void {
+            if (comptime @hasDecl(GraphicsAPI, "setSurfaceSize")) {
+                self.api.setSurfaceSize(width, height);
+            }
+        }
+
         fn deinitShaders(self: *Self) void {
             self.shaders.deinit(self.alloc);
         }

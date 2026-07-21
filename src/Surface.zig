@@ -635,6 +635,7 @@ pub fn init(
                 std.process.EnvMap.init(alloc);
         };
         errdefer env.deinit();
+        defer if (comptime builtin.os.tag == .ios) env.deinit();
 
         // don't leak GHOSTTY_LOG to any subprocesses
         env.remove("GHOSTTY_LOG");
@@ -645,21 +646,25 @@ pub fn init(
             std.fmt.bufPrint(&buf, "0x{x:0>16}", .{self.id}) catch unreachable,
         );
 
-        // Initialize our IO backend
-        var io_exec = try termio.Exec.init(alloc, .{
-            .command = command,
-            .env = env,
-            .env_override = config.env,
-            .shell_integration = config.@"shell-integration",
-            .shell_integration_features = config.@"shell-integration-features",
-            .cursor_blink = config.@"cursor-style-blink",
-            .working_directory = if (config.@"working-directory") |wd| wd.value() else null,
-            .resources_dir = global_state.resources_dir.host(),
-            .term = config.term,
-            .rt_pre_exec_info = .init(config),
-            .rt_post_fork_info = .init(config),
-        });
-        errdefer io_exec.deinit();
+        // Initialize our IO backend. iOS embeds Ghostty with transport owned
+        // by the host application, so it must not launch a local subprocess.
+        var io_backend: termio.Backend = if (comptime builtin.os.tag == .ios)
+            .{ .manual = .{} }
+        else
+            .{ .exec = try termio.Exec.init(alloc, .{
+                .command = command,
+                .env = env,
+                .env_override = config.env,
+                .shell_integration = config.@"shell-integration",
+                .shell_integration_features = config.@"shell-integration-features",
+                .cursor_blink = config.@"cursor-style-blink",
+                .working_directory = if (config.@"working-directory") |wd| wd.value() else null,
+                .resources_dir = global_state.resources_dir.host(),
+                .term = config.term,
+                .rt_pre_exec_info = .init(config),
+                .rt_post_fork_info = .init(config),
+            }) };
+        errdefer io_backend.deinit();
 
         // Initialize our IO mailbox
         var io_mailbox = try termio.Mailbox.initSPSC(alloc);
@@ -669,7 +674,7 @@ pub fn init(
             .size = size,
             .full_config = config,
             .config = try termio.Termio.DerivedConfig.init(alloc, config),
-            .backend = .{ .exec = io_exec },
+            .backend = io_backend,
             .mailbox = io_mailbox,
             .renderer_state = &self.renderer_state,
             .renderer_wakeup = render_thread.wakeup,
@@ -1313,6 +1318,7 @@ fn childExitedAbnormally(
     // Build up our command for the error message
     const command = try std.mem.join(alloc, " ", switch (self.io.backend) {
         .exec => |*exec| exec.subprocess.args,
+        .manual => &.{},
     });
     const runtime_str = try std.fmt.allocPrint(alloc, "{d} ms", .{info.runtime_ms});
 
@@ -2473,6 +2479,10 @@ pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
         .width = size.width,
         .height = size.height,
     };
+
+    // Keep the native presentation layer in sync even when the terminal grid
+    // size itself has not changed (for example, after a view is reattached).
+    self.renderer.setSurfaceSize(size.width, size.height);
 
     // Update our screen size, but only if it actually changed. And if
     // the screen size didn't change, then our grid size could not have

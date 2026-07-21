@@ -232,6 +232,23 @@ pub fn surfaceSize(self: *const Metal) !struct { width: u32, height: u32 } {
     };
 }
 
+/// Update the presentation layer to match the pixel size of the surface.
+pub fn setSurfaceSize(self: *Metal, width: u32, height: u32) void {
+    const scale = self.layer.layer.getProperty(f64, "contentsScale");
+    if (scale <= 0) return;
+
+    self.layer.layer.setProperty(
+        "frame",
+        graphics.Rect.init(
+            0,
+            0,
+            @as(f64, @floatFromInt(width)) / scale,
+            @as(f64, @floatFromInt(height)) / scale,
+        ),
+    );
+    self.layer.layer.msgSend(void, objc.sel("setNeedsDisplay"), .{});
+}
+
 /// Initialize a new render target which can be presented by this API.
 pub fn initTarget(self: *const Metal, width: usize, height: usize) !Target {
     return Target.init(.{

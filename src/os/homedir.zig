@@ -16,11 +16,18 @@ pub inline fn home(buf: []u8) !?[]const u8 {
         .linux, .freebsd, .macos => try homeUnix(buf),
         .windows => try homeWindows(buf),
 
-        // iOS doesn't have a user-writable home directory
-        .ios => null,
+        // iOS apps have a writable, sandboxed home directory.
+        .ios => try homeIOS(buf),
 
         else => @compileError("unimplemented"),
     };
+}
+
+fn homeIOS(buf: []u8) Error!?[]const u8 {
+    const result = posix.getenv("HOME") orelse return null;
+    if (buf.len < result.len) return Error.BufferTooSmall;
+    @memcpy(buf[0..result.len], result);
+    return buf[0..result.len];
 }
 
 fn homeUnix(buf: []u8) !?[]const u8 {
