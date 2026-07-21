@@ -1692,6 +1692,18 @@ pub const CAPI = struct {
         surface.draw();
     }
 
+    /// Feed externally sourced terminal output into the surface. This keeps
+    /// Ghostty's terminal state and renderer while allowing the embedder to
+    /// own transport, for example an SSH channel on iOS.
+    export fn ghostty_surface_feed(
+        surface: *Surface,
+        data: [*]const u8,
+        len: usize,
+    ) void {
+        if (len == 0) return;
+        surface.core_surface.io.processOutput(data[0..len]);
+    }
+
     /// Update the size of a surface. This will trigger resize notifications
     /// to the pty and the renderer.
     export fn ghostty_surface_set_size(surface: *Surface, w: u32, h: u32) void {
